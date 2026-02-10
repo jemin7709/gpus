@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,54 @@ class Config:
     log_backup_count: int = 3
     log_level: str = "INFO"
 
+    def validate(self) -> None:
+        """설정값 타입/범위 검증. 문제가 있으면 ValueError를 발생."""
+        if not isinstance(self.api_port, int) or not (1 <= self.api_port <= 65535):
+            raise ValueError("api_port는 1~65535 정수여야 합니다")
+        if not isinstance(self.api_host, str) or not self.api_host:
+            raise ValueError("api_host는 비어있지 않은 문자열이어야 합니다")
+        if not isinstance(self.api_key, str):
+            raise ValueError("api_key는 문자열이어야 합니다")
+
+        if not isinstance(self.auto_restart_enabled, bool):
+            raise ValueError("auto_restart_enabled는 bool이어야 합니다")
+        if (
+            not isinstance(self.auto_restart_timeout, int)
+            or self.auto_restart_timeout < 0
+        ):
+            raise ValueError("auto_restart_timeout은 0 이상의 정수(초)여야 합니다")
+        if not isinstance(self.monitor_interval, int) or self.monitor_interval <= 0:
+            raise ValueError("monitor_interval은 1 이상의 정수(초)여야 합니다")
+
+        if not isinstance(self.memory_fraction, (int, float)):
+            raise ValueError("memory_fraction은 숫자여야 합니다")
+        if not (0.0 < float(self.memory_fraction) <= 1.0):
+            raise ValueError("memory_fraction은 (0.0, 1.0] 범위여야 합니다")
+        # 내부적으로 float로 일관되게
+        self.memory_fraction = float(self.memory_fraction)
+
+        if self.matrix_size is not None:
+            if not isinstance(self.matrix_size, int) or self.matrix_size <= 0:
+                raise ValueError("matrix_size는 null 또는 양의 정수여야 합니다")
+
+        if not isinstance(self.temperature_limit, int) or self.temperature_limit <= 0:
+            raise ValueError("temperature_limit는 1 이상의 정수(°C)여야 합니다")
+
+        if self.gpu_ids is not None:
+            if not isinstance(self.gpu_ids, list) or any(
+                not isinstance(x, int) or x < 0 for x in self.gpu_ids
+            ):
+                raise ValueError("gpu_ids는 null 또는 0 이상의 정수 리스트여야 합니다")
+
+        if not isinstance(self.log_file, str):
+            raise ValueError("log_file은 문자열이어야 합니다")
+        if not isinstance(self.log_max_bytes, int) or self.log_max_bytes <= 0:
+            raise ValueError("log_max_bytes는 양의 정수여야 합니다")
+        if not isinstance(self.log_backup_count, int) or self.log_backup_count < 0:
+            raise ValueError("log_backup_count는 0 이상의 정수여야 합니다")
+        if not isinstance(self.log_level, str) or not self.log_level:
+            raise ValueError("log_level은 비어있지 않은 문자열이어야 합니다")
+
     @classmethod
     def from_yaml(cls, path: str | Path | None = None) -> Config:
         """YAML 파일에서 설정 로드. 파일이 없으면 기본값 사용."""
@@ -59,7 +107,9 @@ class Config:
             logger.info("설정 파일 로드: %s", config_path)
         else:
             logger.warning("설정 파일 없음, 기본값 사용: %s", config_path)
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        cfg.validate()
+        return cfg
 
     def to_dict(self) -> dict[str, Any]:
         """설정을 딕셔너리로 반환."""
@@ -68,10 +118,22 @@ class Config:
     def update(self, updates: dict[str, Any]) -> dict[str, Any]:
         """설정을 부분적으로 업데이트하고, 변경된 항목을 반환."""
         changed: dict[str, Any] = {}
+        # 먼저 임시로 적용해보고(validate) 통과하면 실제 반영
+        if not isinstance(updates, dict):
+            raise ValueError("updates는 dict여야 합니다")
+
+        trial = self.to_dict()
+        for key, value in updates.items():
+            if key in self.__dataclass_fields__:
+                trial[key] = value
+
+        trial_cfg = Config(**trial)
+        trial_cfg.validate()
+
         for key, value in updates.items():
             if key in self.__dataclass_fields__ and getattr(self, key) != value:
-                setattr(self, key, value)
-                changed[key] = value
+                setattr(self, key, getattr(trial_cfg, key))
+                changed[key] = getattr(trial_cfg, key)
         if changed:
             logger.info("설정 변경: %s", changed)
         return changed
