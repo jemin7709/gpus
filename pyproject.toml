@@ -1,0 +1,16 @@
+[project]
+name = "gpu-keeper"
+version = "0.1.0"
+description = "GPU utilization keeper - maintains GPU util at ~100% with remote on/off control"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "torch",
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "nvidia-ml-py",
+    "pyyaml",
+]
+
+[project.scripts]
+gpu-keeper = "gpu_keeper.main:run"

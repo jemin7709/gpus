@@ -1,0 +1,29 @@
+# GPU Keeper 설정 파일
+
+# API 서버 설정
+api_port: 8080
+api_host: "0.0.0.0"
+api_key: ""  # 비어있으면 인증 비활성화. 설정하면 X-API-Key 헤더 필요
+
+# 자동 재시작 설정
+auto_restart_enabled: true
+auto_restart_timeout: 300  # GPU util 0%가 이 시간(초) 동안 지속되면 자동 재시작
+
+# 모니터링 설정
+monitor_interval: 10  # GPU 상태 체크 주기 (초)
+
+# GPU 워크로드 설정
+memory_fraction: 0.5  # GPU free memory 중 사용할 비율 (0.0~1.0)
+matrix_size: null  # null이면 memory_fraction 기반 자동 계산, 숫자면 해당 크기 사용
+
+# 안전장치
+temperature_limit: 83  # 이 온도(°C) 초과 시 워크로드 자동 중지
+
+# 대상 GPU 설정
+gpu_ids: null  # null이면 전체 GPU, [1, 2, 3] 등으로 대상 GPU 제한
+
+# 로깅 설정
+log_file: "gpu_keeper.log"
+log_max_bytes: 10485760  # 10MB
+log_backup_count: 3
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
