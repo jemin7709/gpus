@@ -5,17 +5,14 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
-import signal
 import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Header, Request
-from fastapi.responses import JSONResponse
 
 from .config import Config
-from .gpu_info import get_all_gpu_status, get_gpu_count, get_gpu_status, init_nvml, shutdown_nvml
+from .gpu_info import get_gpu_count, get_gpu_status, init_nvml, shutdown_nvml
 from .monitor import GpuMonitor
 from .worker import GpuWorker
 
@@ -29,9 +26,15 @@ logger = logging.getLogger("gpu_keeper")
 
 # ─── 로깅 설정 ──────────────────────────────────────────────
 
+
 def _setup_logging(cfg: Config) -> None:
     root = logging.getLogger("gpu_keeper")
     root.setLevel(getattr(logging, cfg.log_level.upper(), logging.INFO))
+    root.propagate = False
+
+    # lifespan이 여러 번 실행되면 핸들러가 중복 추가될 수 있어 초기화
+    for h in list(root.handlers):
+        root.removeHandler(h)
 
     fmt = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s")
 
@@ -51,6 +54,7 @@ def _setup_logging(cfg: Config) -> None:
 
 # ─── Lifespan ────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: 초기화 및 종료."""
@@ -62,10 +66,18 @@ async def lifespan(app: FastAPI):
     _setup_logging(config)
     logger.info("=== GPU Keeper 시작 ===")
 
+    if config.api_key == "" and config.api_host not in {"127.0.0.1", "localhost"}:
+        logger.warning(
+            "api_key가 비어있어 인증이 비활성화되어 있고, 외부 바인딩(%s)입니다. 다중 사용자 환경이면 api_key 설정을 권장합니다.",
+            config.api_host,
+        )
+
     # NVML 초기화
     init_nvml()
     gpu_count = get_gpu_count()
-    target_ids = config.gpu_ids if config.gpu_ids is not None else list(range(gpu_count))
+    target_ids = (
+        config.gpu_ids if config.gpu_ids is not None else list(range(gpu_count))
+    )
     logger.info("대상 GPU: %s (전체 %d개 중)", target_ids, gpu_count)
 
     # 워커 생성 (아직 시작하지 않음 — API로 제어)
@@ -102,13 +114,17 @@ app = FastAPI(
 
 # ─── 인증 미들웨어 ───────────────────────────────────────────
 
+
 async def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """API Key 검증. 설정에 키가 없으면 인증 비활성화."""
+    if config is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
     if config.api_key and x_api_key != config.api_key:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 # ─── 헬퍼 ────────────────────────────────────────────────────
+
 
 def _validate_gpu_id(gpu_id: int) -> None:
     if gpu_id not in workers:
@@ -140,6 +156,7 @@ def _gpu_detail(gpu_id: int) -> dict[str, Any]:
 
 
 # ─── 엔드포인트 ──────────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -204,7 +221,9 @@ async def start_all():
         started = w.start()
         if started:
             monitor.reset_zero_counter(gid)
-        results.append({"gpu_id": gid, "action": "started" if started else "already_running"})
+        results.append(
+            {"gpu_id": gid, "action": "started" if started else "already_running"}
+        )
     return {"results": results}
 
 
@@ -228,15 +247,34 @@ async def get_config():
 @app.put("/config", dependencies=[Depends(verify_api_key)])
 async def update_config(request: Request):
     """설정 부분 업데이트. JSON body로 변경할 필드만 전송."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="JSON body must be an object")
+
     # 런타임 변경 불가 항목 필터
-    immutable = {"api_port", "api_host", "api_key", "log_file", "log_max_bytes", "log_backup_count", "log_level"}
+    immutable = {
+        "api_port",
+        "api_host",
+        "api_key",
+        "log_file",
+        "log_max_bytes",
+        "log_backup_count",
+        "log_level",
+    }
     filtered = {k: v for k, v in body.items() if k not in immutable}
-    changed = config.update(filtered)
+    try:
+        changed = config.update(filtered)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"changed": changed, "current": config.to_dict()}
 
 
 # ─── 엔트리포인트 ────────────────────────────────────────────
+
 
 def run():
     """CLI 엔트리포인트."""
