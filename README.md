@@ -36,6 +36,26 @@ GPU_KEEPER_CONFIG=/path/to/config.yaml uv run gpu-keeper
 http://<서버IP>:8080/docs
 ```
 
+### SSH 환경에서 웹 UI 접속
+
+원격 서버에 SSH로 접속 중이라 서버 쪽 브라우저를 못 쓰는 경우, 로컬에서 포트 포워딩 후 접속:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 <user>@<server>
+```
+
+이후 로컬 브라우저에서 아래 주소로 Swagger UI 접속:
+
+```
+http://127.0.0.1:8080/docs
+```
+
+포워딩 없이 상태만 확인하려면 SSH 세션에서:
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
 ### 주요 엔드포인트
 
 | Endpoint | Method | 설명 |
