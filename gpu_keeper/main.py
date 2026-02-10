@@ -12,7 +12,13 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Header, Request
 
 from .config import Config
-from .gpu_info import get_gpu_count, get_gpu_status, init_nvml, shutdown_nvml
+from .gpu_info import (
+    get_gpu_count,
+    get_gpu_processes,
+    get_gpu_status,
+    init_nvml,
+    shutdown_nvml,
+)
 from .monitor import GpuMonitor
 from .web import router as web_router
 from .worker import GpuWorker
@@ -143,6 +149,7 @@ def _gpu_detail(gpu_id: int) -> dict[str, Any]:
     status = get_gpu_status(gpu_id)
     w = workers[gpu_id]
     remaining = monitor.get_auto_restart_remaining(gpu_id) if monitor else None
+    processes = get_gpu_processes(gpu_id)
     return {
         "gpu_id": gpu_id,
         "name": status.name,
@@ -156,6 +163,17 @@ def _gpu_detail(gpu_id: int) -> dict[str, Any]:
         "power_draw_w": status.power_draw_w,
         "power_limit_w": status.power_limit_w,
         "auto_restart_remaining_s": remaining,
+        "processes": [
+            {
+                "pid": p.pid,
+                "name": p.name,
+                "used_gpu_memory_mb": p.used_gpu_memory_mb,
+                "command": p.command,
+                "working_dir": p.working_dir,
+                "user": p.user,
+            }
+            for p in processes
+        ],
     }
 
 

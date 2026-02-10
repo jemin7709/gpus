@@ -18,7 +18,9 @@ def init_nvml() -> None:
     if not _initialized:
         pynvml.nvmlInit()
         _initialized = True
-        logger.info("NVML 초기화 완료 (드라이버: %s)", pynvml.nvmlSystemGetDriverVersion())
+        logger.info(
+            "NVML 초기화 완료 (드라이버: %s)", pynvml.nvmlSystemGetDriverVersion()
+        )
 
 
 def shutdown_nvml() -> None:
@@ -96,3 +98,93 @@ def get_free_memory_mb(gpu_id: int) -> int:
     handle = pynvml.nvmlDeviceGetHandleByIndex(gpu_id)
     mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
     return mem.free // (1024 * 1024)
+
+
+@dataclass
+class GpuProcessInfo:
+    """GPU에서 실행 중인 프로세스 정보."""
+
+    pid: int
+    name: str
+    used_gpu_memory_mb: int
+    command: str
+    working_dir: str
+    user: str
+
+
+def get_gpu_processes(gpu_id: int) -> list[GpuProcessInfo]:
+    """특정 GPU에서 실행 중인 프로세스 목록 조회."""
+    from pathlib import Path
+
+    init_nvml()
+    handle = pynvml.nvmlDeviceGetHandleByIndex(gpu_id)
+
+    try:
+        procs = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
+    except pynvml.NVMLError:
+        procs = []
+
+    # 그래픽 프로세스도 포함
+    try:
+        gfx_procs = pynvml.nvmlDeviceGetGraphicsRunningProcesses(handle)
+        # PID 중복 제거
+        existing_pids = {p.pid for p in procs}
+        for gp in gfx_procs:
+            if gp.pid not in existing_pids:
+                procs.append(gp)
+    except pynvml.NVMLError:
+        pass
+
+    results: list[GpuProcessInfo] = []
+    for proc in procs:
+        pid = proc.pid
+        mem_mb = (proc.usedGpuMemory or 0) // (1024 * 1024)
+
+        # /proc 에서 프로세스 정보 읽기
+        proc_path = Path(f"/proc/{pid}")
+        name = ""
+        command = ""
+        working_dir = ""
+        user = ""
+
+        try:
+            cmdline_raw = proc_path.joinpath("cmdline").read_bytes()
+            parts = cmdline_raw.decode("utf-8", errors="replace").split("\x00")
+            parts = [p for p in parts if p]
+            command = " ".join(parts) if parts else ""
+            name = parts[0].rsplit("/", 1)[-1] if parts else ""
+        except (OSError, ValueError):
+            name = f"pid:{pid}"
+
+        try:
+            working_dir = str(proc_path.joinpath("cwd").resolve())
+        except OSError:
+            working_dir = "(접근 불가)"
+
+        try:
+            status_text = proc_path.joinpath("status").read_text()
+            for line in status_text.splitlines():
+                if line.startswith("Uid:"):
+                    uid = int(line.split()[1])
+                    try:
+                        import pwd
+
+                        user = pwd.getpwuid(uid).pw_name
+                    except (KeyError, ImportError):
+                        user = str(uid)
+                    break
+        except OSError:
+            user = "(알 수 없음)"
+
+        results.append(
+            GpuProcessInfo(
+                pid=pid,
+                name=name,
+                used_gpu_memory_mb=mem_mb,
+                command=command,
+                working_dir=working_dir,
+                user=user,
+            )
+        )
+
+    return results

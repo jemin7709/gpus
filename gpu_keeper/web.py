@@ -271,6 +271,87 @@ DASHBOARD_HTML = """\
     gap: 4px;
   }
 
+  /* 프로세스 목록 */
+  .proc-section {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .proc-header {
+    font-size: 0.8rem;
+    color: var(--text2);
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .proc-header:hover { color: var(--text); }
+  .proc-toggle { transition: transform 0.2s; display: inline-block; }
+  .proc-toggle.open { transform: rotate(90deg); }
+  .proc-list { display: none; }
+  .proc-list.open { display: block; }
+  .proc-item {
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .proc-item:hover { border-color: var(--accent); background: rgba(255,255,255,0.05); }
+  .proc-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 3px;
+  }
+  .proc-pid {
+    background: rgba(108,99,255,0.2);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-family: monospace;
+    font-size: 0.75rem;
+  }
+  .proc-name { font-weight: 600; color: var(--text); }
+  .proc-mem {
+    background: rgba(255,171,64,0.15);
+    color: var(--orange);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.72rem;
+    margin-left: auto;
+  }
+  .proc-user {
+    background: rgba(0,210,255,0.15);
+    color: var(--accent2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+  }
+  .proc-detail {
+    color: var(--text2);
+    font-family: monospace;
+    font-size: 0.72rem;
+    word-break: break-all;
+    line-height: 1.4;
+  }
+  .proc-detail span {
+    color: var(--text2);
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .proc-empty {
+    color: var(--text2);
+    font-size: 0.78rem;
+    font-style: italic;
+  }
+
   /* 토스트 */
   .toast-container {
     position: fixed;
@@ -456,6 +537,42 @@ function tempColor(t, limit) {
   return 'var(--green)';
 }
 
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function truncate(s, max) {
+  if (!s) return '';
+  return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function renderProcessList(procs) {
+  if (!procs || procs.length === 0) {
+    return '<div class="proc-empty">실행 중인 프로세스 없음</div>';
+  }
+  return procs.map(p => `
+    <div class="proc-item">
+      <div class="proc-row">
+        <span class="proc-pid">PID ${p.pid}</span>
+        <span class="proc-name">${escapeHtml(p.name)}</span>
+        <span class="proc-user">${escapeHtml(p.user)}</span>
+        <span class="proc-mem">${p.used_gpu_memory_mb} MB</span>
+      </div>
+      <div class="proc-detail"><span>경로:</span>${escapeHtml(p.working_dir)}</div>
+      <div class="proc-detail"><span>명령:</span>${escapeHtml(truncate(p.command, 200))}</div>
+    </div>
+  `).join('');
+}
+
+function toggleProcs(el) {
+  const toggle = el.querySelector('.proc-toggle');
+  const list = el.nextElementSibling;
+  toggle.classList.toggle('open');
+  list.classList.toggle('open');
+}
+
 function renderGpuCard(gpu) {
   const memPct = gpu.memory_total_mb > 0
     ? Math.round(gpu.memory_used_mb / gpu.memory_total_mb * 100) : 0;
@@ -519,6 +636,16 @@ function renderGpuCard(gpu) {
       </div>
 
       ${restartHtml}
+
+      <div class="proc-section">
+        <div class="proc-header" onclick="toggleProcs(this)">
+          <span class="proc-toggle">&#9654;</span>
+          실행 중인 프로세스 (${gpu.processes ? gpu.processes.length : 0}개)
+        </div>
+        <div class="proc-list">
+          ${renderProcessList(gpu.processes)}
+        </div>
+      </div>
 
       <div class="card-actions">
         <button class="btn btn-start" onclick="gpuAction(${gpu.gpu_id}, 'start')" ${gpu.worker_running?'disabled':''}>
