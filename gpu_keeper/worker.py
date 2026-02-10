@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 import math
 import multiprocessing as mp
-import time
+import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from multiprocessing.context import SpawnProcess
+    from multiprocessing.synchronize import Event as MpEvent
 
 logger = logging.getLogger("gpu_keeper")
 
@@ -32,7 +37,7 @@ def _compute_matrix_size(free_memory_mb: int, memory_fraction: float) -> int:
 
 def _worker_loop(
     gpu_id: int,
-    stop_event: mp.Event,
+    stop_event: MpEvent,
     memory_fraction: float,
     matrix_size: int | None,
 ) -> None:
@@ -41,7 +46,9 @@ def _worker_loop(
 
     proc_logger = logging.getLogger(f"gpu_keeper.worker.{gpu_id}")
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s"))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s")
+    )
     proc_logger.addHandler(handler)
     proc_logger.setLevel(logging.INFO)
 
@@ -53,12 +60,12 @@ def _worker_loop(
         if matrix_size and matrix_size > 0:
             n = matrix_size
         else:
-            free_mb = torch.cuda.mem_get_info(gpu_id)[0] // (1024 * 1024)
+            # set_device 이후이므로 현재 device 기준으로 조회하는 편이 안전
+            free_mb = torch.cuda.mem_get_info()[0] // (1024 * 1024)
             n = _compute_matrix_size(free_mb, memory_fraction)
 
         proc_logger.info(
-            "GPU %d 워크로드 시작 (행렬 크기: %d×%d, "
-            "메모리 ~%.0f MB)",
+            "GPU %d 워크로드 시작 (행렬 크기: %d×%d, 메모리 ~%.0f MB)",
             gpu_id,
             n,
             n,
@@ -90,57 +97,77 @@ def _worker_loop(
 class GpuWorker:
     """GPU별 워크로드 프로세스 관리."""
 
-    def __init__(self, gpu_id: int, memory_fraction: float = 0.5, matrix_size: int | None = None):
+    def __init__(
+        self, gpu_id: int, memory_fraction: float = 0.5, matrix_size: int | None = None
+    ):
         self.gpu_id = gpu_id
         self.memory_fraction = memory_fraction
         self.matrix_size = matrix_size
-        self._process: mp.Process | None = None
-        self._stop_event: mp.Event | None = None
+        self._process: SpawnProcess | None = None
+        self._stop_event: MpEvent | None = None
+        self._lock = threading.Lock()
+
+        # CUDA 컨텍스트는 fork와 궁합이 좋지 않아서(특히 torch) spawn을 강제하는 편이 안전함.
+        # 전역 start_method를 바꾸지 않고, 이 워커에서만 spawn context를 사용.
+        self._mp_ctx = mp.get_context("spawn")
 
     @property
     def is_running(self) -> bool:
-        return self._process is not None and self._process.is_alive()
+        proc = self._process
+        return proc is not None and proc.is_alive()
 
     def start(self) -> bool:
         """워크로드 시작. 이미 실행 중이면 False 반환."""
-        if self.is_running:
-            logger.warning("GPU %d 이미 실행 중", self.gpu_id)
-            return False
+        with self._lock:
+            if self.is_running:
+                logger.warning("GPU %d 이미 실행 중", self.gpu_id)
+                return False
 
-        self._stop_event = mp.Event()
-        self._process = mp.Process(
-            target=_worker_loop,
-            args=(self.gpu_id, self._stop_event, self.memory_fraction, self.matrix_size),
-            daemon=True,
-            name=f"gpu-worker-{self.gpu_id}",
-        )
-        self._process.start()
-        logger.info("GPU %d 워커 프로세스 시작 (PID: %d)", self.gpu_id, self._process.pid)
-        return True
+            stop_event = self._mp_ctx.Event()
+            proc = self._mp_ctx.Process(
+                target=_worker_loop,
+                args=(self.gpu_id, stop_event, self.memory_fraction, self.matrix_size),
+                daemon=True,
+                name=f"gpu-worker-{self.gpu_id}",
+            )
+            proc.start()
+            self._stop_event = stop_event
+            self._process = proc
+            logger.info("GPU %d 워커 프로세스 시작 (PID: %d)", self.gpu_id, proc.pid)
+            return True
 
     def stop(self, timeout: float = 10.0) -> bool:
         """워크로드 중지. 정상 종료 시 True, 강제 종료 시 False."""
-        if not self.is_running:
-            logger.info("GPU %d 이미 중지됨", self.gpu_id)
-            return True
+        with self._lock:
+            if not self.is_running:
+                logger.info("GPU %d 이미 중지됨", self.gpu_id)
+                self._process = None
+                self._stop_event = None
+                return True
 
-        self._stop_event.set()
-        self._process.join(timeout=timeout)
+            stop_event = self._stop_event
+            proc = self._process
 
-        if self._process.is_alive():
-            logger.warning("GPU %d 워커 SIGTERM 전송", self.gpu_id)
-            self._process.terminate()
-            self._process.join(timeout=5)
+            if stop_event is not None:
+                stop_event.set()
 
-        if self._process is not None and self._process.is_alive():
-            logger.warning("GPU %d 워커 SIGKILL 강제 종료", self.gpu_id)
-            self._process.kill()
-            self._process.join(timeout=3)
+            if proc is not None:
+                proc.join(timeout=timeout)
+
+            if proc is not None and proc.is_alive():
+                logger.warning("GPU %d 워커 SIGTERM 전송", self.gpu_id)
+                proc.terminate()
+                proc.join(timeout=5)
+
+            if proc is not None and proc.is_alive():
+                logger.warning("GPU %d 워커 SIGKILL 강제 종료", self.gpu_id)
+                proc.kill()
+                proc.join(timeout=3)
+                self._process = None
+                self._stop_event = None
+                return False
+
+            logger.info("GPU %d 워커 정상 종료", self.gpu_id)
             self._process = None
             self._stop_event = None
-            return False
-
-        logger.info("GPU %d 워커 정상 종료", self.gpu_id)
-        self._process = None
-        self._stop_event = None
-        return True
+            return True
