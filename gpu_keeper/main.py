@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from .config import Config
 from .gpu_info import get_gpu_count, get_gpu_status, init_nvml, shutdown_nvml
 from .monitor import GpuMonitor
+from .web import router as web_router
 from .worker import GpuWorker
 
 # ─── 전역 상태 ───────────────────────────────────────────────
@@ -110,6 +111,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# ─── 웹 대시보드 ─────────────────────────────────────────────
+app.include_router(web_router)
 
 
 # ─── 인증 미들웨어 ───────────────────────────────────────────
