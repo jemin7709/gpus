@@ -4,8 +4,16 @@ description: General instructions for Agent.
 ---
 # General Instructions
 
+- Use korean language for all responses. (Except when the user requests another language)
+- Search related files for context before starting a task.
+- If a Codex MCP is available, invoke it to help verify code and validate ideas.
 - 단위작업 (Task)는 최대한 작게 쪼개서 수행하세요.
 - 작업이 여러 단계로 나뉘어질 경우, 각 단계를 명확히 구분하고 순서대로 진행하세요.
 - 작업 중간에 발생하는 모든 중요한 정보는 기록해 두세요. (.agent/에 저장)
 - 단위작업이 완료되면, 커밋 메시지를 작성하고 변경사항을 저장하세요.
 - 작업이 완료되면, 최종 결과물을 검토하고 필요한 경우 수정하세요.
+
+# Python Specific Instructions
+
+- Use `uv` for Python.
+- After finishing a task, run `ruff` and `pyrefly` to check and fix code style and static issues.
