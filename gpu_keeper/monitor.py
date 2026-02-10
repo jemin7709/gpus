@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from typing import TYPE_CHECKING
 
 from . import gpu_info
@@ -37,7 +36,9 @@ class GpuMonitor:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._monitor_loop, daemon=True, name="gpu-monitor")
+        self._thread = threading.Thread(
+            target=self._monitor_loop, daemon=True, name="gpu-monitor"
+        )
         self._thread.start()
         logger.info("GPU 모니터 시작 (주기: %ds)", self.config.monitor_interval)
 
@@ -88,13 +89,17 @@ class GpuMonitor:
 
             # 온도가 정상 복귀했고, 이전에 열로 중지됐던 GPU면 재시작
             if gpu_id in self._thermal_stopped:
-                if status.temperature < self.config.temperature_limit - 5:  # 5°C 히스테리시스
+                if (
+                    status.temperature < self.config.temperature_limit - 5
+                ):  # 5°C 히스테리시스
                     logger.info(
                         "GPU %d 온도 정상화 (%d°C) — 워크로드 재시작",
                         gpu_id,
                         status.temperature,
                     )
                     self._thermal_stopped.discard(gpu_id)
+                    worker.memory_fraction = self.config.memory_fraction
+                    worker.matrix_size = self.config.matrix_size
                     worker.start()
                     self._zero_util_duration[gpu_id] = 0.0
                 continue
@@ -106,12 +111,17 @@ class GpuMonitor:
             if not worker.is_running:
                 if status.utilization_gpu == 0:
                     self._zero_util_duration[gpu_id] += self.config.monitor_interval
-                    if self._zero_util_duration[gpu_id] >= self.config.auto_restart_timeout:
+                    if (
+                        self._zero_util_duration[gpu_id]
+                        >= self.config.auto_restart_timeout
+                    ):
                         logger.info(
                             "GPU %d util 0%%가 %d초 지속 — 자동 재시작",
                             gpu_id,
                             int(self._zero_util_duration[gpu_id]),
                         )
+                        worker.memory_fraction = self.config.memory_fraction
+                        worker.matrix_size = self.config.matrix_size
                         worker.start()
                         self._zero_util_duration[gpu_id] = 0.0
                 else:
@@ -130,5 +140,5 @@ class GpuMonitor:
             return None
         elapsed = self._zero_util_duration.get(gpu_id, 0.0)
         if elapsed > 0:
-            return max(0, self.config.auto_restart_timeout - elapsed)
+            return max(0.0, self.config.auto_restart_timeout - elapsed)
         return None
