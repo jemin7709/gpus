@@ -10,6 +10,11 @@ import time
 logger = logging.getLogger("gpu_keeper")
 
 
+# 행렬 크기 상한 — matmul 1회가 ~1초 이내에 끝나야 stop_event 체크가 빠름
+# H100 FP32: 16384×16384 matmul ≈ 0.3초, 충분히 util 100% 유지
+_MAX_MATRIX_SIZE = 16384
+
+
 def _compute_matrix_size(free_memory_mb: int, memory_fraction: float) -> int:
     """사용 가능한 메모리와 비율로 정방행렬 크기 계산.
 
@@ -20,6 +25,8 @@ def _compute_matrix_size(free_memory_mb: int, memory_fraction: float) -> int:
     n = int(math.sqrt(usable_bytes / (3 * 4)))
     # 256 단위로 내림 (Tensor Core 정렬)
     n = max(256, (n // 256) * 256)
+    # 상한 적용 — 너무 크면 matmul 1회가 길어져서 stop이 느려짐
+    n = min(n, _MAX_MATRIX_SIZE)
     return n
 
 
@@ -67,10 +74,9 @@ def _worker_loop(
         while not stop_event.is_set():
             torch.matmul(a, b, out=c)
             iteration += 1
-            # 주기적으로 stop 체크 (matmul이 비동기라 빈틈없이 돌아감)
-            if iteration % 200 == 0:
-                # 명시적 체크 포인트 — stop_event.is_set()은 가벼움
-                pass
+            # 주기적으로 동기화하여 stop_event 체크 기회 보장
+            if iteration % 50 == 0:
+                torch.cuda.synchronize(device)
 
         # 정리
         del a, b, c
@@ -122,9 +128,14 @@ class GpuWorker:
         self._process.join(timeout=timeout)
 
         if self._process.is_alive():
-            logger.warning("GPU %d 워커 강제 종료", self.gpu_id)
+            logger.warning("GPU %d 워커 SIGTERM 전송", self.gpu_id)
             self._process.terminate()
             self._process.join(timeout=5)
+
+        if self._process is not None and self._process.is_alive():
+            logger.warning("GPU %d 워커 SIGKILL 강제 종료", self.gpu_id)
+            self._process.kill()
+            self._process.join(timeout=3)
             self._process = None
             self._stop_event = None
             return False
