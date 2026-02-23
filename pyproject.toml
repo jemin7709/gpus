@@ -12,6 +12,7 @@ dependencies = [
     "torch",
     "nvidia-ml-py",
     "pyyaml",
+    "numpy>=2.4.2",
 ]
 
 [project.scripts]
