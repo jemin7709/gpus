@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "gpu-keeper"
 version = "0.1.0"
@@ -12,3 +16,6 @@ dependencies = [
 
 [project.scripts]
 gpu-keeper = "gpu_keeper.main:run"
+
+[tool.uv]
+package = true
