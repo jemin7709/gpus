@@ -50,10 +50,6 @@ class GpuMonitor:
             self._thread = None
         logger.info("GPU 모니터 중지")
 
-    def reset_zero_counter(self, gpu_id: int) -> None:
-        """특정 GPU의 util 0% 카운터 초기화."""
-        self._zero_util_duration[gpu_id] = 0.0
-
     def _monitor_loop(self) -> None:
         """모니터링 메인 루프."""
         while not self._stop_event.is_set():
@@ -130,15 +126,3 @@ class GpuMonitor:
             else:
                 # 워커가 실행 중이면 카운터 리셋
                 self._zero_util_duration[gpu_id] = 0.0
-
-    def get_auto_restart_remaining(self, gpu_id: int) -> float | None:
-        """자동 재시작까지 남은 시간(초) 반환. 해당사항 없으면 None."""
-        if not self.config.auto_restart_enabled:
-            return None
-        worker = self.workers.get(gpu_id)
-        if worker and worker.is_running:
-            return None
-        elapsed = self._zero_util_duration.get(gpu_id, 0.0)
-        if elapsed > 0:
-            return max(0.0, self.config.auto_restart_timeout - elapsed)
-        return None

@@ -18,11 +18,6 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 class Config:
     """런타임 설정."""
 
-    # API
-    api_port: int = 8080
-    api_host: str = "0.0.0.0"
-    api_key: str = ""
-
     # 자동 재시작
     auto_restart_enabled: bool = True
     auto_restart_timeout: int = 300  # 초
@@ -48,13 +43,6 @@ class Config:
 
     def validate(self) -> None:
         """설정값 타입/범위 검증. 문제가 있으면 ValueError를 발생."""
-        if not isinstance(self.api_port, int) or not (1 <= self.api_port <= 65535):
-            raise ValueError("api_port는 1~65535 정수여야 합니다")
-        if not isinstance(self.api_host, str) or not self.api_host:
-            raise ValueError("api_host는 비어있지 않은 문자열이어야 합니다")
-        if not isinstance(self.api_key, str):
-            raise ValueError("api_key는 문자열이어야 합니다")
-
         if not isinstance(self.auto_restart_enabled, bool):
             raise ValueError("auto_restart_enabled는 bool이어야 합니다")
         if (
@@ -107,33 +95,17 @@ class Config:
             logger.info("설정 파일 로드: %s", config_path)
         else:
             logger.warning("설정 파일 없음, 기본값 사용: %s", config_path)
-        cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+        # 알 수 없는 키 경고
+        known_keys = set(cls.__dataclass_fields__)
+        unknown_keys = set(data.keys()) - known_keys
+        if unknown_keys:
+            logger.warning("알 수 없는 설정 키 무시: %s", unknown_keys)
+
+        cfg = cls(**{k: v for k, v in data.items() if k in known_keys})
         cfg.validate()
         return cfg
 
     def to_dict(self) -> dict[str, Any]:
         """설정을 딕셔너리로 반환."""
         return {k: getattr(self, k) for k in self.__dataclass_fields__}
-
-    def update(self, updates: dict[str, Any]) -> dict[str, Any]:
-        """설정을 부분적으로 업데이트하고, 변경된 항목을 반환."""
-        changed: dict[str, Any] = {}
-        # 먼저 임시로 적용해보고(validate) 통과하면 실제 반영
-        if not isinstance(updates, dict):
-            raise ValueError("updates는 dict여야 합니다")
-
-        trial = self.to_dict()
-        for key, value in updates.items():
-            if key in self.__dataclass_fields__:
-                trial[key] = value
-
-        trial_cfg = Config(**trial)
-        trial_cfg.validate()
-
-        for key, value in updates.items():
-            if key in self.__dataclass_fields__ and getattr(self, key) != value:
-                setattr(self, key, getattr(trial_cfg, key))
-                changed[key] = getattr(trial_cfg, key)
-        if changed:
-            logger.info("설정 변경: %s", changed)
-        return changed

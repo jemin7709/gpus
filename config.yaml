@@ -1,10 +1,5 @@
 # GPU Keeper 설정 파일
 
-# API 서버 설정
-api_port: 8080
-api_host: "0.0.0.0"
-api_key: ""  # 비어있으면 인증 비활성화. 설정하면 X-API-Key 헤더 필요
-
 # 자동 재시작 설정
 auto_restart_enabled: true
 auto_restart_timeout: 300  # GPU util 0%가 이 시간(초) 동안 지속되면 자동 재시작
