@@ -93,11 +93,11 @@ def main() -> None:
         target_ids = list(dict.fromkeys(target_ids))
         logger.info("대상 GPU: %s (전체 %d개 중)", target_ids, gpu_count)
 
-        # 워커 생성 및 즉시 시작
+        # 워커 생성 및 시작 (점유 GPU는 기본 동작으로 스킵)
         for gid in target_ids:
             w = GpuWorker(gid, config.memory_fraction, config.matrix_size)
 
-            if config.skip_busy_gpus_at_start and _is_gpu_busy(gid):
+            if _is_gpu_busy(gid):
                 logger.warning(
                     "GPU %d 점유 프로세스 감지 — 시작을 건너뜀. 모니터링으로 복구 대기",
                     gid,

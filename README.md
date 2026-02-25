@@ -43,7 +43,6 @@ GPU_KEEPER_CONFIG=/path/to/config.yaml uv run gpu-keeper
 | `matrix_size` | null | 고정 행렬 크기. null이면 자동 계산 |
 | `temperature_limit` | 83 | 온도 초과 시 자동 중지(°C) |
 | `gpu_ids` | null | 관리 대상 GPU. null이면 전체 |
-| `skip_busy_gpus_at_start` | true | 시작 시 GPU에 기존 GPU 프로세스가 있으면 시작 생략 |
 | `log_file` | gpu_keeper.log | 로그 파일 |
 | `log_level` | INFO | 로그 레벨 (DEBUG, INFO, WARNING, ERROR) |
 
