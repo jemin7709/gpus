@@ -34,6 +34,7 @@ class Config:
 
     # 대상 GPU
     gpu_ids: list[int] | None = None
+    skip_busy_gpus_at_start: bool = True
 
     # 로깅
     log_file: str = "gpu_keeper.log"
@@ -72,6 +73,9 @@ class Config:
                 not isinstance(x, int) or x < 0 for x in self.gpu_ids
             ):
                 raise ValueError("gpu_ids는 null 또는 0 이상의 정수 리스트여야 합니다")
+
+        if not isinstance(self.skip_busy_gpus_at_start, bool):
+            raise ValueError("skip_busy_gpus_at_start는 bool이어야 합니다")
 
         if not isinstance(self.log_file, str):
             raise ValueError("log_file은 문자열이어야 합니다")

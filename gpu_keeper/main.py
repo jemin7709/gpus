@@ -14,7 +14,7 @@ import sys
 import threading
 
 from .config import Config
-from .gpu_info import get_gpu_count, init_nvml, shutdown_nvml
+from .gpu_info import get_gpu_count, get_gpu_processes, init_nvml, shutdown_nvml
 from .monitor import GpuMonitor
 from .worker import GpuWorker
 
@@ -51,6 +51,18 @@ def _setup_logging(cfg: Config) -> None:
         root.addHandler(fh)
 
 
+def _is_gpu_busy(gpu_id: int) -> bool:
+    """현재 GPU를 점유한 다른 프로세스가 있는지 확인."""
+    try:
+        processes = get_gpu_processes(gpu_id)
+    except Exception:
+        logger.exception("GPU %d 프로세스 조회 실패", gpu_id)
+        # 조회 실패 시 안전하게 점유로 간주해 시작을 보류
+        return True
+
+    return any(proc.pid != os.getpid() for proc in processes)
+
+
 # ─── 메인 로직 ──────────────────────────────────────────────
 
 
@@ -84,6 +96,15 @@ def main() -> None:
         # 워커 생성 및 즉시 시작
         for gid in target_ids:
             w = GpuWorker(gid, config.memory_fraction, config.matrix_size)
+
+            if config.skip_busy_gpus_at_start and _is_gpu_busy(gid):
+                logger.warning(
+                    "GPU %d 점유 프로세스 감지 — 시작을 건너뜀. 모니터링으로 복구 대기",
+                    gid,
+                )
+                workers[gid] = w
+                continue
+
             w.start()
             workers[gid] = w
 

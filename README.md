@@ -1,7 +1,7 @@
 # GPU Keeper
 
 GPU utilization을 ~100%로 유지하는 더미 워크로드 프로그램.  
-실행하면 모든 대상 GPU에 워크로드를 자동 시작하고, 모니터링 + 자동 재시작 + 온도 안전장치를 수행합니다.
+실행 시 각 GPU의 점유 상태를 확인한 뒤 워크로드를 시작하고, 모니터링 + 자동 재시작 + 온도 안전장치를 수행합니다.
 
 ## 설치
 
@@ -43,6 +43,7 @@ GPU_KEEPER_CONFIG=/path/to/config.yaml uv run gpu-keeper
 | `matrix_size` | null | 고정 행렬 크기. null이면 자동 계산 |
 | `temperature_limit` | 83 | 온도 초과 시 자동 중지(°C) |
 | `gpu_ids` | null | 관리 대상 GPU. null이면 전체 |
+| `skip_busy_gpus_at_start` | true | 시작 시 GPU에 기존 GPU 프로세스가 있으면 시작 생략 |
 | `log_file` | gpu_keeper.log | 로그 파일 |
 | `log_level` | INFO | 로그 레벨 (DEBUG, INFO, WARNING, ERROR) |
 
@@ -50,7 +51,7 @@ GPU_KEEPER_CONFIG=/path/to/config.yaml uv run gpu-keeper
 
 - **워크로드**: `torch.matmul` (FP32 정방행렬) 무한 루프. GPU free memory의 50%를 사용
 - **프로세스 격리**: GPU별 별도 프로세스(`multiprocessing.Process`) — stop 시 GPU 메모리 확실히 해제
-- **자동 시작**: 실행 즉시 모든 대상 GPU에 워크로드 자동 시작
+- **자동 시작**: 시작 시 GPU 점유 상태를 확인해 비어 있는 GPU만 워크로드 시작
 - **자동 재시작**: 워커가 꺼진 GPU에서 util 0%가 설정 시간 동안 지속되면 자동 시작
 - **온도 안전장치**: 설정 온도 초과 시 자동 중지, 5°C 히스테리시스 후 재시작
 - **모니터링**: pynvml로 주기적 GPU 상태(util, 온도, 전력, 메모리) 조회

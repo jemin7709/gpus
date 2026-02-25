@@ -2,7 +2,7 @@
 
 # 자동 재시작 설정
 auto_restart_enabled: true
-auto_restart_timeout: 300  # GPU util 0%가 이 시간(초) 동안 지속되면 자동 재시작
+auto_restart_timeout: 600  # GPU util 0%가 이 시간(초) 동안 지속되면 자동 재시작
 
 # 모니터링 설정
 monitor_interval: 10  # GPU 상태 체크 주기 (초)
@@ -16,6 +16,7 @@ temperature_limit: 83  # 이 온도(°C) 초과 시 워크로드 자동 중지
 
 # 대상 GPU 설정
 gpu_ids: null  # null이면 전체 GPU, [1, 2, 3] 등으로 대상 GPU 제한
+skip_busy_gpus_at_start: true  # 시작 시 이미 GPU를 점유한 프로세스가 있으면 실행 생략
 
 # 로깅 설정
 log_file: "gpu_keeper.log"
