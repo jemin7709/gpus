@@ -2,7 +2,7 @@
 
 # 자동 재시작 설정
 auto_restart_enabled: true
-auto_restart_timeout: 600  # GPU util 0%가 이 시간(초) 동안 지속되면 자동 재시작
+auto_restart_timeout: 300  # GPU util 0%가 이 시간(초) 동안 지속되면 자동 재시작
 
 # 모니터링 설정
 monitor_interval: 10  # GPU 상태 체크 주기 (초)
