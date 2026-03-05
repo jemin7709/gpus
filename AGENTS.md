@@ -6,7 +6,6 @@ description: General instructions for Agent.
 
 - Use korean language for all responses. (Except when the user requests another language)
 - Search related files for context before starting a task.
-- If a Codex MCP is available, invoke it to help verify code and validate ideas.
 - 단위작업 (Task)는 최대한 작게 쪼개서 수행하세요.
 - 작업이 여러 단계로 나뉘어질 경우, 각 단계를 명확히 구분하고 순서대로 진행하세요.
 - 작업 중간에 발생하는 모든 중요한 정보는 기록해 두세요. (.agent/에 저장)
