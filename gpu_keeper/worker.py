@@ -116,6 +116,14 @@ class GpuWorker:
         proc = self._process
         return proc is not None and proc.is_alive()
 
+    @property
+    def process_pid(self) -> int | None:
+        """실행 중인 워커 PID를 반환. 프로세스가 없으면 None."""
+        proc = self._process
+        if proc is None:
+            return None
+        return proc.pid
+
     def start(self) -> bool:
         """워크로드 시작. 이미 실행 중이면 False 반환."""
         with self._lock:

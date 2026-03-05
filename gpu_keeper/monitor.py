@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,7 @@ class GpuMonitor:
     def __init__(self, config: Config, workers: dict[int, GpuWorker]):
         self.config = config
         self.workers = workers
+        self._keeper_pid = os.getpid()
 
         # GPU별 util 0% 연속 시간 추적 (초)
         self._zero_util_duration: dict[int, float] = {gid: 0.0 for gid in workers}
@@ -30,6 +32,35 @@ class GpuMonitor:
 
         # 온도로 인해 자동 중지된 GPU 추적
         self._thermal_stopped: set[int] = set()
+
+    def _stop_on_external_gpu_occupancy(self, gpu_id: int, worker: GpuWorker) -> bool:
+        """외부 프로세스가 GPU를 점유하면 워크로드를 중지. 중지 시 True."""
+        try:
+            processes = gpu_info.get_gpu_processes(gpu_id)
+        except Exception:
+            logger.exception("GPU %d 프로세스 조회 실패 — 외부 점유 감지 건너뜀", gpu_id)
+            return False
+
+        allowed_pids = {self._keeper_pid}
+        worker_pid = worker.process_pid
+        if worker_pid is not None:
+            allowed_pids.add(worker_pid)
+
+        external_processes = [p for p in processes if p.pid not in allowed_pids]
+        if not external_processes:
+            return False
+
+        external_summary = ", ".join(
+            f"{proc.pid}:{proc.name or 'unknown'}" for proc in external_processes
+        )
+        logger.warning(
+            "GPU %d 외부 점유 프로세스 감지 (%s) — 워크로드 자동 중지",
+            gpu_id,
+            external_summary,
+        )
+        worker.stop()
+        self._zero_util_duration[gpu_id] = 0.0
+        return True
 
     def start(self) -> None:
         """모니터 스레드 시작."""
@@ -68,6 +99,10 @@ class GpuMonitor:
                 status = gpu_info.get_gpu_status(gpu_id)
             except Exception:
                 logger.exception("GPU %d 상태 조회 실패", gpu_id)
+                continue
+
+            # === 실행 중 충돌 회피: 외부 점유 감지 시 워크로드 즉시 중지 ===
+            if worker.is_running and self._stop_on_external_gpu_occupancy(gpu_id, worker):
                 continue
 
             # === 안전장치: 온도 체크 ===

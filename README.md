@@ -51,6 +51,7 @@ GPU_KEEPER_CONFIG=/path/to/config.yaml uv run gpu-keeper
 - **워크로드**: `torch.matmul` (FP32 정방행렬) 무한 루프. GPU free memory의 50%를 사용
 - **프로세스 격리**: GPU별 별도 프로세스(`multiprocessing.Process`) — stop 시 GPU 메모리 확실히 해제
 - **자동 시작**: 시작 시 GPU 점유 상태를 확인해 비어 있는 GPU만 워크로드 시작
+- **충돌 회피**: 워크로드 실행 중 다른 프로세스가 GPU를 점유하면 워크로드 즉시 중지
 - **자동 재시작**: 워커가 꺼진 GPU에서 util 0%가 설정 시간 동안 지속되면 자동 시작
 - **온도 안전장치**: 설정 온도 초과 시 자동 중지, 5°C 히스테리시스 후 재시작
 - **모니터링**: pynvml로 주기적 GPU 상태(util, 온도, 전력, 메모리) 조회
